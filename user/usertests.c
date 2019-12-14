@@ -1960,8 +1960,8 @@ main(int argc, char *argv[])
   }
   close(open("usertests.ran", O_CREATE));
 
-  reparent();
-  twochildren();
+  //reparent();
+  //twochildren();
   forkfork();
   forkforkfork();
   
