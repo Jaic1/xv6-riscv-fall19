@@ -52,6 +52,46 @@ fdalloc(struct file *f)
   return -1;
 }
 
+// check pages not mapped (typically from sbrk)
+// also check if user-passing args valid
+// used in sys_read, sys_write and sys_pipe
+static int
+checkpages(uint64 va, uint64 size, char *prompt)
+{
+  uint64 a, last;
+  pagetable_t pagetable;
+
+  if(va + size > myproc()->sz){
+    // printf("%s checkpages: addr not valid\n", prompt);
+    return -1;
+  }
+
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + size - 1);
+  pagetable = myproc()->pagetable;
+  for(;;){
+    if(walkaddr(pagetable, a) == 0){
+      char *pa = kalloc();
+      if(pa == 0){
+        printf("%s(): memory not enough\n", prompt);
+        myproc()->killed = 1;
+        exit(-1);
+      }
+      if(mappages(pagetable, a, PGSIZE, (uint64)pa, PTE_R|PTE_W|PTE_U) < 0){
+        printf("%s(): memory for pagetable not enough\n", prompt);
+        myproc()->killed = 1;
+        exit(-1);
+      }
+    }
+
+    if(a == last)
+      break;
+    a += PGSIZE;
+  }
+
+  return 0;
+}
+
 uint64
 sys_dup(void)
 {
@@ -75,6 +115,11 @@ sys_read(void)
 
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
+
+  // allocate memory for pages not mapped
+  if(checkpages(p, n, "sys_read") < 0)
+    return -1;
+
   return fileread(f, p, n);
 }
 
@@ -86,6 +131,10 @@ sys_write(void)
   uint64 p;
 
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
+    return -1;
+
+  // allocate memory for pages not mapped
+  if(checkpages(p, n, "sys_write") < 0)
     return -1;
 
   return filewrite(f, p, n);
@@ -472,6 +521,12 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+
+  // allocate memory for pages not mapped
+  // also check if user-passing args valid
+  if(checkpages(fdarray, 2*sizeof(int), "sys_pipe") < 0)
+    return -1;
+
   if(copyout(p->pagetable, fdarray, (char*)&fd0, sizeof(fd0)) < 0 ||
      copyout(p->pagetable, fdarray+sizeof(fd0), (char *)&fd1, sizeof(fd1)) < 0){
     p->ofile[fd0] = 0;

@@ -37,6 +37,8 @@ void
 usertrap(void)
 {
   int which_dev = 0;
+  uint64 scause;
+  uint64 stval;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
@@ -50,7 +52,11 @@ usertrap(void)
   // save user program counter.
   p->tf->epc = r_sepc();
   
-  if(r_scause() == 8){
+  // read scause
+  scause = r_scause();
+  stval = r_stval();
+
+  if(scause == 8){
     // system call
 
     if(p->killed)
@@ -67,12 +73,41 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(scause == 13 || scause == 15){
+    // load or store page fault
+
+    if(stval > p->sz){
+      printf("usertrap: access %p greater than process sz %p\n", stval, p->sz);
+      p->killed = 1;
+      goto A;
+    }
+
+    if(PGROUNDDOWN(stval) == PGROUNDDOWN(p->tf->sp)-PGSIZE){
+      printf("usertrap: cannot access below stack %p\n", stval);
+      p->killed = 1;
+      goto A;
+    }
+
+    char *mem = kalloc();
+    if(mem == 0){
+      printf("usertrap: heap memory not enough\n");
+      p->killed = 1;
+      goto A;
+    }
+
+    if(mappages(p->pagetable, PGROUNDDOWN(stval), PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_U) != 0){
+      printf("usertrap: mappages error\n");
+      kfree(mem);
+      p->killed = 1;
+      goto A;
+    }
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    printf("usertrap: unexpected scause %p pid=%d\n", scause, p->pid);
+    printf("            sepc=%p stval=%p\n", r_sepc(), stval);
     p->killed = 1;
   }
 
+A:
   if(p->killed)
     exit(-1);
 
