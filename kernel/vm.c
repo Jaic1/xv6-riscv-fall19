@@ -312,8 +312,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 
 // Given a parent process's page table, copy
 // its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
+// COW - Copies the page table but not the physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
 int
@@ -322,20 +321,20 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+    
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    *pte = *pte & (~(uint64)PTE_W);
+    flags = flags & (~(uint)PTE_W);
+    kcopy((void *)pa);
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      kfree((void *)pa);
       goto err;
     }
   }
@@ -344,6 +343,36 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
  err:
   uvmunmap(new, 0, i, 1);
   return -1;
+}
+
+// Allocate new page for a forked process to write in.
+// va passed in might not be aligned.
+int
+uvmcow(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 pa;
+  char *mem;
+
+  if(va >= MAXVA)
+    return 0;
+  if((pte = walk(pagetable, va, 0)) == 0)
+    return 0;
+  if((*pte & PTE_V) == 0)
+    return 0;
+
+  pa = PTE2PA(*pte); 
+  if((mem = kuncopy_begin((void *)pa)) == 0){
+    // only one reference to this page, so just use it to write in
+    *pte = *pte | PTE_W;
+  }
+  else{
+    // copy a new page
+    memmove(mem, (void *)pa, PGSIZE);
+    *pte = PA2PTE(mem) | PTE_FLAGS(*pte) | PTE_W;
+  }
+  kuncopy_end((void *)pa, 1);
+  return 1;
 }
 
 // mark a PTE invalid for user access.
@@ -369,6 +398,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    if(va0 < MAXVA && !(*walk(pagetable, va0, 0) & PTE_W))
+      uvmcow(pagetable, va0);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
