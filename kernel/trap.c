@@ -77,8 +77,53 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    if(!p->hassignal || p->insignal)
+      goto y;
+    if(++p->ticks == p->tick0){
+      p->insignal = 1;
+      
+      // save current registers into sigtext
+      p->sigtext.ra = p->tf->ra;
+      p->sigtext.sp = p->tf->sp;
+      p->sigtext.t0 = p->tf->t0;
+      p->sigtext.t1 = p->tf->t1;
+      p->sigtext.t2 = p->tf->t2;
+      p->sigtext.a0 = p->tf->a0;
+      p->sigtext.a1 = p->tf->a1;
+      p->sigtext.a2 = p->tf->a2;
+      p->sigtext.a3 = p->tf->a3;
+      p->sigtext.a4 = p->tf->a4;
+      p->sigtext.a5 = p->tf->a5;
+      p->sigtext.a6 = p->tf->a6;
+      p->sigtext.a7 = p->tf->a7;
+      p->sigtext.t3 = p->tf->t3;
+      p->sigtext.t4 = p->tf->t4;
+      p->sigtext.t5 = p->tf->t5;
+      p->sigtext.t6 = p->tf->t6;
+
+      p->sigtext.s0 = p->tf->s0;
+      p->sigtext.s1 = p->tf->s1;
+      p->sigtext.s2 = p->tf->s2;
+      p->sigtext.s3 = p->tf->s3;
+      p->sigtext.s4 = p->tf->s4;
+      p->sigtext.s5 = p->tf->s5;
+      p->sigtext.s6 = p->tf->s6;
+      p->sigtext.s7 = p->tf->s7;
+      p->sigtext.s8 = p->tf->s8;
+      p->sigtext.s9 = p->tf->s9;
+      p->sigtext.s10 = p->tf->s10;
+      p->sigtext.s11 = p->tf->s11;
+
+      // save handler return pc
+      // and switch to signal handler
+      p->handret = p->tf->epc;
+      p->tf->epc = p->handler;
+    }
+
+  y:
     yield();
+  }
 
   usertrapret();
 }

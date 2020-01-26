@@ -123,6 +123,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // Set up no signal handler
+  memset(&p->sigtext, 0, sizeof p->sigtext);
+  p->hassignal = 0;
+
   return p;
 }
 

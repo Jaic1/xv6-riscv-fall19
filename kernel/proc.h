@@ -18,6 +18,44 @@ struct context {
   uint64 s11;
 };
 
+// Saved registers for switching to signal handler
+struct sigtext {
+  uint64 ra;
+  uint64 sp;
+
+  // caller-saved
+  uint64 t0;
+  uint64 t1;
+  uint64 t2;
+  uint64 a0;
+  uint64 a1;
+  uint64 a2;
+  uint64 a3;
+  uint64 a4;
+  uint64 a5;
+  uint64 a6;
+  uint64 a7;
+  uint64 t3;
+  uint64 t4;
+  uint64 t5;
+  uint64 t6;
+
+  // called-saved needed too
+  // see lab6-syscall record
+  uint64 s0;
+  uint64 s1;
+  uint64 s2;
+  uint64 s3;
+  uint64 s4;
+  uint64 s5;
+  uint64 s6;
+  uint64 s7;
+  uint64 s8;
+  uint64 s9;
+  uint64 s10;
+  uint64 s11;
+};
+
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
@@ -99,6 +137,10 @@ struct proc {
   uint64 sz;                   // Size of process memory (bytes)
   pagetable_t pagetable;       // Page table
   struct trapframe *tf;        // data page for trampoline.S
+  int hassignal, insignal;     // do not call embedded signal handler
+  int tick0, ticks;            // record timer tick here
+  uint64 handler, handret;     // pointer to signal handler and relevant return pc
+  struct sigtext sigtext;      // store normal program and signal handler's context
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory

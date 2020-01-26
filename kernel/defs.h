@@ -1,4 +1,5 @@
 struct buf;
+struct sigtext;
 struct context;
 struct file;
 struct inode;
